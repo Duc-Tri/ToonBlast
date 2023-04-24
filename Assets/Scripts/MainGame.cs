@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UIElements;
 
 public class MainGame : MonoBehaviour
 {
@@ -17,21 +16,24 @@ public class MainGame : MonoBehaviour
     private SpriteRenderer background;
 
     public static GameGrid gameGrid;
+    public static Pooler blocksPooler;
 
     // Start is called before the first frame update
     void Start()
     {
         // on adapte la taille de la caméra à la résolution
         AdaptCamera();
+        blocksPooler = new Pooler(blockPrefab);
+
 
         // donne à la grille la taille du viewport, le prefab
         gameGrid = new GameGrid(blockPrefab, MAX_X, MAX_Y);
+        gameGrid.RandomBlocks();
 
         // utilise les offsets de la grille pour dessiner le fond
         if (background != null)
             gameGrid.DrawBackgroundMask(background);
 
-        gameGrid.RandomBlocks();
 
         //testBlocks();
     }

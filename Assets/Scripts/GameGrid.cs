@@ -1,10 +1,11 @@
 using System;
 using UnityEngine;
-using UnityEngine.UIElements;
-
-
 public class GameGrid
 {
+
+    enum GridState { WAIT_TOUCH = 0, DELETE_BLOCKS = 1, CREATE_BLOCKS = 2 }
+    GridState gridState;
+
     private string levelName = "level01";
 
     private int[,] layout;
@@ -35,6 +36,8 @@ public class GameGrid
     // Start is called before the first frame update
     public GameGrid(GameObject prefab, float maxX, float maxY)
     {
+        gridState = GridState.CREATE_BLOCKS;
+
         blockPrefab = prefab;
         string levelContent = Resources.Load<TextAsset>(levelName).text;
 
@@ -71,9 +74,7 @@ public class GameGrid
             return -1;
     }
 
-
     public void DrawBackgroundMask(SpriteRenderer background)
-
     {
         Texture2D texture = new Texture2D(1 + (int)(MainGame.MAX_X * 2f), 1 + (int)(MainGame.MAX_Y * 2f), TextureFormat.RGBA32, false);
 
@@ -132,43 +133,88 @@ public class GameGrid
         return null; ///////////// spriteMask;
     }
 
-    internal void ProcessTouch(Vector2 position)
-    {
 
+    const int ACTION_CLEAR = 10;
+    const int ACTION_CREATE = 20;
+    internal void ProcessTouch(Vector2 position, int action = ACTION_CLEAR)
+    {
+        if (gridState != GridState.WAIT_TOUCH)
+            return;
 
         Vector2 worldPosition = Camera.main.ScreenToWorldPoint(position);
         Vector2Int cellPos = new Vector2Int((int)(worldPosition.x - GameGrid.X_OFFSET + 0.5f), (int)(worldPosition.y - GameGrid.Y_OFFSET + 0.5f));
 
-        Debug.Log(" ===== touch=" + position + " ===== cell=" + cellPos);
-
+        //Debug.Log(" ===== touch=" + position + " ===== cell=" + cellPos);
 
         if (cellPos.x < NUM_COLUMNS && cellPos.y < NUM_LINES)
         {
-            Block b = boardBlocks[cellPos.x, cellPos.y];
-            if (b != null)
-                b.gameObject.SetActive(false);
-        }
+            Block block = boardBlocks[cellPos.x, cellPos.y];
+            action = (block == null) ? ACTION_CREATE : ACTION_CLEAR;
 
+            switch (action)
+            {
+                case ACTION_CLEAR:
+                    gridState = GridState.DELETE_BLOCKS;
+                    ClearBlocks(block.colorBlock, cellPos.x, cellPos.y);
+                    gridState = GridState.WAIT_TOUCH;
+                    break;
+
+                case ACTION_CREATE:
+                    block = MainGame.blocksPooler.GetItem().GetComponent<Block>();
+                    boardBlocks[cellPos.x, cellPos.y] = block;
+                    block.SetGridXY(cellPos.x, cellPos.y);
+                    block.SetRandomColor();
+
+                    break;
+
+            }
+        }
     }
 
-    internal void SetBlock(Block block, int x, int y)
+    private void ClearBlocks(int color2match, int x, int y)
+    {
+        if (x < 0 || y < 0 || x >= NUM_COLUMNS || y >= NUM_LINES)
+            return;
+
+        Block block = boardBlocks[x, y];
+        if (block == null)
+            return;
+
+        // si c'est la même couleur
+        if (block.colorBlock == color2match)
+        {
+            SetBlockInGrid(null, x, y);
+            block.Disapear();
+
+            ClearBlocks(color2match, x - 1, y);
+            ClearBlocks(color2match, x + 1, y);
+            ClearBlocks(color2match, x, y + 1);
+            ClearBlocks(color2match, x, y - 1);
+        }
+    }
+
+    internal void SetBlockInGrid(Block block, int x, int y)
     {
         boardBlocks[x, y] = block;
     }
 
     internal void RandomBlocks()
     {
+        gridState = GridState.CREATE_BLOCKS;
         for (int x = 0; x < NUM_COLUMNS; x++)
         {
             for (int y = 0; y < NUM_LINES; y++)
             {
-                if (Layout(x, y) != 0)
+                if (Layout(x, y) != NO_BLOCK)
                 {
-                    Block b = GameObject.Instantiate(blockPrefab).GetComponent<Block>();
+                    Block b = MainGame.blocksPooler.GetItem().GetComponent<Block>();
+                    boardBlocks[x, y] = b;
                     //b.SetBlock((int)(UnityEngine.Random.value * 555) % 5);
                     b.SetGridXY(x, y);
                 }
             }
         }
+
+        gridState = GridState.WAIT_TOUCH;
     }
 }
