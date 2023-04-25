@@ -1,6 +1,3 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class MainGame : MonoBehaviour
@@ -21,21 +18,18 @@ public class MainGame : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        // on adapte la taille de la caméra à la résolution
-        AdaptCamera();
         blocksPooler = new Pooler(blockPrefab);
 
+        // on adapte la taille de la caméra à la résolution
+        AdaptCamera();
 
         // donne à la grille la taille du viewport, le prefab
         gameGrid = new GameGrid(blockPrefab, MAX_X, MAX_Y);
-        gameGrid.RandomBlocks();
+        gameGrid.FillGridRandomly();
 
         // utilise les offsets de la grille pour dessiner le fond
         if (background != null)
             gameGrid.DrawBackgroundMask(background);
-
-
-        //testBlocks();
     }
 
     private void AdaptCamera()
@@ -47,21 +41,6 @@ public class MainGame : MonoBehaviour
         Camera.main.orthographicSize = MAX_Y;
 
         Debug.Log("Screen w*h : " + Screen.width + " / " + Screen.height + " UNITS =" + MAX_X + " / " + MAX_Y);
-    }
-
-    private void testBlocks()
-    {
-        for (int i = 0; i < 200; i++)
-        {
-            GameObject go = GameObject.Instantiate(blockPrefab);
-
-            go.transform.position = new Vector3(UnityEngine.Random.value * 5 - 2.5f, UnityEngine.Random.value * 10 - 5, 0);
-            go.GetComponent<Block>().SetBlock(i % 5);
-
-            //go.GetComponent<SpriteRenderer>().sprite = blockSprites[i];
-
-            //.GetComponent<Block>()
-        }
     }
 
     // Update is called once per frame

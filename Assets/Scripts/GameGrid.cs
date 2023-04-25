@@ -1,20 +1,26 @@
 using System;
 using UnityEngine;
+using static System.Collections.Specialized.BitVector32;
+using UnityEngine.UIElements;
+using UnityEditor;
+
 public class GameGrid
 {
-
-    enum GridState { WAIT_TOUCH = 0, DELETE_BLOCKS = 1, CREATE_BLOCKS = 2 }
-    GridState gridState;
+    enum GridState
+    {
+        WAIT_INPUT = 0,
+        CLEAR_BLOCKS = 1,
+        NEW_BLOCKS = 2
+    }
+    private GridState gridState;
 
     private string levelName = "level01";
 
     private int[,] layout;
 
-    private float mAX_X;
-    private float mAX_Y;
     const int NO_BLOCK = 0;
 
-    private Block[,] boardBlocks;
+    private Block[,] gridBlocks;
 
     public int NUM_COLUMNS
     {
@@ -30,15 +36,15 @@ public class GameGrid
 
     public static float X_OFFSET { get; private set; }
     public static float Y_OFFSET { get; private set; }
-    public static object Instance { get; internal set; }
-    public static GameObject blockPrefab;
+
+    //public static GameObject blockPrefab;
 
     // Start is called before the first frame update
     public GameGrid(GameObject prefab, float maxX, float maxY)
     {
-        gridState = GridState.CREATE_BLOCKS;
+        gridState = GridState.NEW_BLOCKS;
 
-        blockPrefab = prefab;
+        //blockPrefab = prefab;
         string levelContent = Resources.Load<TextAsset>(levelName).text;
 
         string[] lines = levelContent.Split('\n');
@@ -63,15 +69,104 @@ public class GameGrid
 
         Debug.Log("X_OFFSET = " + X_OFFSET + " Y_OFFSET = " + Y_OFFSET);
 
-        boardBlocks = new Block[NUM_COLUMNS, NUM_LINES];
+        gridBlocks = new Block[NUM_COLUMNS, NUM_LINES];
     }
 
-    public int Layout(int x, int y)
+    public int LayoutCell(int x, int y)
     {
         if (x < NUM_COLUMNS && y < NUM_LINES)
             return layout[x, y];
         else
             return -1;
+    }
+
+    const int ACTION_CLEAR = 10;
+    const int ACTION_CREATE = 20;
+    internal void ProcessTouch(Vector2 position, int action = ACTION_CLEAR)
+    {
+        if (gridState != GridState.WAIT_INPUT)
+            return;
+
+        Vector2 worldPosition = Camera.main.ScreenToWorldPoint(position);
+        int gridX = (int)(worldPosition.x - GameGrid.X_OFFSET + 0.5f);
+        int gridY = (int)(worldPosition.y - GameGrid.Y_OFFSET + 0.5f);
+
+        EnterClearBlocksState(gridX, gridY);
+    }
+
+    private void EnterClearBlocksState(int gridX, int gridY)
+    {
+        //Debug.Log(" ===== touch=" + position + " ===== cell=" + cellPos);
+
+        Block block = TryToGetFromGrid(gridX, gridY);
+        if (!DeleteIsPossible(block, gridX, gridY))
+            return;
+
+        gridState = GridState.CLEAR_BLOCKS;
+        ExecuteClearBlocks(block.colorBlock, gridX, gridY);
+        //gridState = GridState.WAIT_INPUT;
+
+    }
+
+    private bool DeleteIsPossible(Block block, int x, int y)
+    {
+        return block != null && (SameBlock(block.colorBlock, x - 1, y) || SameBlock(block.colorBlock, x + 1, y) || SameBlock(block.colorBlock, x, y + 1) || SameBlock(block.colorBlock, x, y - 1));
+    }
+
+    private bool SameBlock(int color2match, int x, int y)
+    {
+        Block block = TryToGetFromGrid(x, y);
+        return (block != null && block.colorBlock == color2match);
+    }
+
+    private Block TryToGetFromGrid(int x, int y)
+    {
+        if (x < 0 || y < 0 || x >= NUM_COLUMNS || y >= NUM_LINES)
+            return null;
+
+        return gridBlocks[x, y];
+    }
+
+    private void ExecuteClearBlocks(int color2match, int x, int y)
+    {
+        Block block = TryToGetFromGrid(x, y);
+
+        // si c'est la même couleur
+        if (block != null && block.colorBlock == color2match)
+        {
+            SetBlockInGrid(null, x, y);
+            block.Disapear();
+
+            ExecuteClearBlocks(color2match, x - 1, y);
+            ExecuteClearBlocks(color2match, x + 1, y);
+            ExecuteClearBlocks(color2match, x, y + 1);
+            ExecuteClearBlocks(color2match, x, y - 1);
+        }
+    }
+
+    internal void SetBlockInGrid(Block block, int x, int y)
+    {
+        gridBlocks[x, y] = block;
+    }
+
+    internal void FillGridRandomly()
+    {
+        gridState = GridState.NEW_BLOCKS;
+        for (int x = 0; x < NUM_COLUMNS - 1; x++)
+        {
+            for (int y = 0; y < NUM_LINES - 1; y++)
+            {
+                if (LayoutCell(x, y) != NO_BLOCK)
+                {
+                    Block b = MainGame.blocksPooler.GetItem().GetComponent<Block>();
+                    gridBlocks[x, y] = b;
+                    //b.SetBlock((int)(UnityEngine.Random.value * 555) % 5);
+                    b.PutIntoGrid(x, y);
+                }
+            }
+        }
+
+        gridState = GridState.WAIT_INPUT;
     }
 
     public void DrawBackgroundMask(SpriteRenderer background)
@@ -81,25 +176,16 @@ public class GameGrid
         float pixelsPerUnit = background.sprite.pixelsPerUnit;
         Sprite sprite = Sprite.Create(texture, new Rect(0, 0, MainGame.MAX_X * 2, MainGame.MAX_Y * 2), new Vector2(0.5f, 0.5f), 1);
 
-        //GetComponent<SpriteRenderer>().sprite = sprite;
-
         //texture.SetPixel(0, 0, Color.white);
         //texture.SetPixel(NUM_COLUMNS - 1, NUM_LINES - 1, Color.white);
 
-        for (int y = 0; y < texture.height; y++) // += (int)pixelsPerUnit) // texture.height
+        for (int y = 0; y < texture.height; y++)
         {
-            for (int x = 0; x < texture.width; x++) // += (int)pixelsPerUnit) //Goes through each pixel // texture.width
-            {
-                if (Layout(x, y) > 0)
-                {
-                    //if (UnityEngine.Random.Range(0, 2) == 1) //50/50 chance it will be black or white
-
+            for (int x = 0; x < texture.width; x++)
+                if (LayoutCell(x, y) > 0)
                     texture.SetPixel(x, y, Color.white);
-                }
-            }
         }
         texture.Apply();
-
 
         SpriteMask mask = background.gameObject.AddComponent<SpriteMask>();
         mask.alphaCutoff = 0.906f;
@@ -107,114 +193,89 @@ public class GameGrid
         background.transform.position = new Vector2((2f * MainGame.MAX_X - NUM_COLUMNS) / 2f, (2f * MainGame.MAX_Y - NUM_LINES) / 2f);
     }
 
-    public Sprite DrawMask2(SpriteRenderer spriteMask)
+    internal void BlockDisapperingCount(int unavailableBlocks)
     {
-        Color[] colors = new Color[100 * 100];
-        for (int i = 0; i < colors.Length; i++)
-            colors[i] = Color.clear;
-
-
-        Color[] colors2 = new Color[100 * 100];
-        for (int i = 0; i < colors.Length; i++)
-            colors2[i] = Color.white;
-
-        Texture2D t = new Texture2D(1, 1); //  spriteMask.texture;
-
-        //Texture2D t2 = new Texture2D(500, 500);
-        for (int i = 0; i < 15; i++)
+        if (unavailableBlocks > 0)
         {
-            Debug.Log(i * 100);
-            t.SetPixels(i * 100, i * 100, 100, 100, colors);
-            t.Apply();
+            //gridState = GridState.DELETE_BLOCKS;
+            //gridState = GridState.WAIT_INPUT; // create blocks
+            gridState = GridState.CLEAR_BLOCKS;
         }
-        t = new Texture2D(1000, 1000, TextureFormat.ARGB32, false);
-        t.Apply();
-
-        return null; ///////////// spriteMask;
-    }
-
-
-    const int ACTION_CLEAR = 10;
-    const int ACTION_CREATE = 20;
-    internal void ProcessTouch(Vector2 position, int action = ACTION_CLEAR)
-    {
-        if (gridState != GridState.WAIT_TOUCH)
-            return;
-
-        Vector2 worldPosition = Camera.main.ScreenToWorldPoint(position);
-        Vector2Int cellPos = new Vector2Int((int)(worldPosition.x - GameGrid.X_OFFSET + 0.5f), (int)(worldPosition.y - GameGrid.Y_OFFSET + 0.5f));
-
-        //Debug.Log(" ===== touch=" + position + " ===== cell=" + cellPos);
-
-        if (cellPos.x < NUM_COLUMNS && cellPos.y < NUM_LINES)
+        else
         {
-            Block block = boardBlocks[cellPos.x, cellPos.y];
-            action = (block == null) ? ACTION_CREATE : ACTION_CLEAR;
-
-            switch (action)
-            {
-                case ACTION_CLEAR:
-                    gridState = GridState.DELETE_BLOCKS;
-                    ClearBlocks(block.colorBlock, cellPos.x, cellPos.y);
-                    gridState = GridState.WAIT_TOUCH;
-                    break;
-
-                case ACTION_CREATE:
-                    block = MainGame.blocksPooler.GetItem().GetComponent<Block>();
-                    boardBlocks[cellPos.x, cellPos.y] = block;
-                    block.SetGridXY(cellPos.x, cellPos.y);
-                    block.SetRandomColor();
-
-                    break;
-
-            }
+            //gridState = GridState.CREATE_BLOCKS;
+            //gridState = GridState.WAIT_INPUT; // create blocks
+            EnterNewBlocksState();
         }
+
+        Debug.Log("BlockDisapering = " + unavailableBlocks);
     }
 
-    private void ClearBlocks(int color2match, int x, int y)
+    // si il y a une case vide, on entre dans l'état NEW_BLOCKS
+    private void EnterNewBlocksState()
     {
-        if (x < 0 || y < 0 || x >= NUM_COLUMNS || y >= NUM_LINES)
-            return;
+        int columnToFill = 0;
 
-        Block block = boardBlocks[x, y];
-        if (block == null)
-            return;
-
-        // si c'est la même couleur
-        if (block.colorBlock == color2match)
-        {
-            SetBlockInGrid(null, x, y);
-            block.Disapear();
-
-            ClearBlocks(color2match, x - 1, y);
-            ClearBlocks(color2match, x + 1, y);
-            ClearBlocks(color2match, x, y + 1);
-            ClearBlocks(color2match, x, y - 1);
-        }
-    }
-
-    internal void SetBlockInGrid(Block block, int x, int y)
-    {
-        boardBlocks[x, y] = block;
-    }
-
-    internal void RandomBlocks()
-    {
-        gridState = GridState.CREATE_BLOCKS;
         for (int x = 0; x < NUM_COLUMNS; x++)
         {
             for (int y = 0; y < NUM_LINES; y++)
             {
-                if (Layout(x, y) != NO_BLOCK)
+                if (LayoutCell(x, y) > 0 && gridBlocks[x, y] == null)
                 {
-                    Block b = MainGame.blocksPooler.GetItem().GetComponent<Block>();
-                    boardBlocks[x, y] = b;
-                    //b.SetBlock((int)(UnityEngine.Random.value * 555) % 5);
-                    b.SetGridXY(x, y);
+                    columnToFill++;
+                    ProcessNewBlocks(x, y);
+
+                    break; // next column !
                 }
             }
         }
 
-        gridState = GridState.WAIT_TOUCH;
+        //if (columnToFill == 0)
+        EnterWaitInputState();
+    }
+
+    private void ProcessNewBlocks(int column, int firstEmptyY)
+    {
+        //gridState = GridState.NEW_BLOCKS;
+        Block block;
+        for (int emptyY = firstEmptyY; emptyY < NUM_LINES; emptyY++)
+        {
+            if (gridBlocks[column, emptyY] == null)
+            {
+                for (int y = emptyY + 1; y < NUM_LINES; y++)
+                {
+                    block = gridBlocks[column, y];
+                    if (block != null)
+                    {
+                        gridBlocks[column, emptyY] = block;
+                        gridBlocks[column, y] = null;
+                        block.MoveTo(column, emptyY);
+
+                        break; // prochaine case vide !
+                    }
+                }
+            }
+        }
+    }
+
+    internal void BlockMovingCount(int unavailableBlocks)
+    {
+        if (unavailableBlocks > 0)
+        {
+            gridState = GridState.NEW_BLOCKS;
+        }
+        else
+        {
+            //gridState = GridState.CREATE_BLOCKS;
+            //gridState = GridState.WAIT_INPUT; // create blocks
+            EnterWaitInputState();
+        }
+
+        Debug.Log("BlockMovingCount ============ " + unavailableBlocks);
+    }
+
+    private void EnterWaitInputState()
+    {
+        gridState = GridState.WAIT_INPUT;
     }
 }

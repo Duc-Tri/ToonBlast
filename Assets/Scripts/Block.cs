@@ -16,56 +16,90 @@ public class Block : MonoBehaviour
     private SpriteRenderer spriteRenderer;
     public bool disappearingAnimation;
     public static int numBlocksDisapearing = 0;
+    public static int numBlocksMoving = 0;
+
+    private static GameGrid grid;
+    private static Pooler pooler;
 
     private void Awake()
     {
         spriteRenderer = GetComponent<SpriteRenderer>();
-        SetBlock(UnityEngine.Random.Range(0, MAX_BLOCKS));
+        InitBlock(UnityEngine.Random.Range(0, MAX_BLOCKS));
+
+        if (grid == null)
+            grid = MainGame.gameGrid;
+
+        if (pooler == null)
+            pooler = MainGame.blocksPooler;
     }
 
-    internal void SetBlock(int color)
+    internal void InitBlock(int color)
     {
         colorBlock = color;
         spriteRenderer.sprite = blockSprites[colorBlock];
         spriteRenderer.color = Color.white;
         spriteRenderer.transform.localScale = Vector3.one;
-
     }
 
-    internal void SetGridXY(int x, int y)
+    internal void PutIntoGrid(int x, int y)
     {
         transform.position = new Vector2(x + GameGrid.X_OFFSET, y + GameGrid.Y_OFFSET);
-        MainGame.gameGrid.SetBlockInGrid(this, x, y);
+        grid.SetBlockInGrid(this, x, y);
     }
 
     public void SetRandomColor()
     {
-        SetBlock(UnityEngine.Random.Range(0, MAX_BLOCKS));
+        InitBlock(UnityEngine.Random.Range(0, MAX_BLOCKS));
     }
 
     public void Disapear()
     {
-        numBlocksDisapearing++;
-        StartCoroutine(FadeToCLear());
+        grid.BlockDisapperingCount(++numBlocksDisapearing); // à remplacer par un event/delegate ...
+        StartCoroutine(FadeToClear());
     }
 
-    static WaitForSeconds wait = new WaitForSeconds(0.015f);
-    private float SPEED_ANIM = 1f;
-    const float ANIM_STEPS = 100f;
-    private IEnumerator FadeToCLear()
+    static WaitForSeconds interframe = new WaitForSeconds(0.015f);
+    const float ANIM_STEPS = 20f;
+    private IEnumerator FadeToClear()
     {
         spriteRenderer.transform.localScale = Vector3.one * 1.2f;
-        for (int step = 0; step < ANIM_STEPS; step++)
+        for (int iStep = 0; iStep < ANIM_STEPS; iStep++)
         {
-            spriteRenderer.color = Color.Lerp(spriteRenderer.color, Color.clear, step / ANIM_STEPS);
-            spriteRenderer.transform.localScale = Vector3.Lerp(spriteRenderer.transform.localScale, Vector3.zero, step / ANIM_STEPS);
-            yield return wait;
-        }
-        //while (spriteRenderer.color.a > 0.01f);
+            float percent = iStep / ANIM_STEPS;
+            spriteRenderer.color = Color.Lerp(spriteRenderer.color, Color.clear, percent);
+            spriteRenderer.transform.localScale = Vector3.Lerp(spriteRenderer.transform.localScale, Vector3.zero, percent);
 
-        Debug.Log("FadeToCLear ................. " + this.name);
-        numBlocksDisapearing--;
-        MainGame.blocksPooler.SaveItem(this.gameObject);
+            yield return interframe;
+        }
+
+        //Debug.Log("FadeToClear ................. " + this.name);
+        grid.BlockDisapperingCount(--numBlocksDisapearing); // à remplacer par un event/delegate ...
+        pooler.SaveItem(this.gameObject);
     }
 
+    Vector2 targetPos;
+    internal void MoveTo(int gridX, int gridY)
+    {
+        targetPos = new Vector2(gridX + GameGrid.X_OFFSET, gridY + GameGrid.Y_OFFSET);
+        // new Vector2(gridX, gridY);
+
+        grid.BlockMovingCount(++numBlocksMoving); // à remplacer par un event/delegate ...
+        StartCoroutine(MoveToTarget());
+    }
+
+    private IEnumerator MoveToTarget()
+    {
+        for (int iStep = 0; iStep < ANIM_STEPS; iStep++)
+        {
+            float percent = iStep / ANIM_STEPS;
+            transform.position = Vector2.Lerp(transform.position, targetPos, percent);
+
+            yield return interframe;
+        }
+
+        yield return interframe;
+
+        Debug.Log("MoveToTarget ................. " + this.name + " >>> " + targetPos);
+        grid.BlockMovingCount(--numBlocksMoving); // à remplacer par un event/delegate ...
+    }
 }

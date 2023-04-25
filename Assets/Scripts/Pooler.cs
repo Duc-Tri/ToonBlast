@@ -43,7 +43,7 @@ public class Pooler
 
         go = pool[0];
         pool.RemoveAt(0);
-        go.name = "ITEM_RESTORE_" + (num++);
+        go.name = "ITEM_RESTORED_" + (num++);
         go.SetActive(true);
         return go;
     }
@@ -51,7 +51,7 @@ public class Pooler
     public void SaveItem(GameObject go)
     {
         pool.Add(go);
-        go.name = "ITEM_SAVE_" + (num++);
+        go.name = "ITEM_SAVED_" + (num++);
         go.SetActive(false);
     }
 
