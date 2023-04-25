@@ -1,51 +1,43 @@
-using System;
 using UnityEngine;
-using static System.Collections.Specialized.BitVector32;
-using UnityEngine.UIElements;
-using UnityEditor;
 
+// grille du jeu
 public class GameGrid
 {
-    enum GridState
+    public const int MAX_COLUMNS = 9;
+
+    public enum GridState : int
     {
-        WAIT_INPUT = 0,
-        CLEAR_BLOCKS = 1,
-        NEW_BLOCKS = 2
+        EMPTY = 0,
+        WAIT_INPUT = 1,
+        CLEAR_BLOCKS = 2,
+        NEW_BLOCKS = 3
     }
-    private GridState gridState;
+    public GridState gridState;
 
-    private string levelName = "level01";
-
-    private int[,] layout;
-
-    const int NO_BLOCK = 0;
+    private int[,] layout; // lu à partir du CSV
+    private const int LAYOUT_BLOCK_FORBIDDEN = 0; // valeur dans le CSV
+    private const int LAYOUT_BLOCK_ENABLE = 1; // valeur dans le CSV
+    private const int OUTSIDE_LAYOUT = -1; // valeur dans le CSV
 
     private Block[,] gridBlocks;
 
-    public int NUM_COLUMNS
-    {
-        get; private set;
-    }
+    public int NUM_COLUMNS { get; private set; }
 
-    public int NUM_LINES
-    {
-        get; private set;
-    }
-
-    public const int MAX_COLUMNS = 9;
+    public int NUM_LINES { get; private set; }
 
     public static float X_OFFSET { get; private set; }
     public static float Y_OFFSET { get; private set; }
 
-    //public static GameObject blockPrefab;
-
-    // Start is called before the first frame update
-    public GameGrid(GameObject prefab, float maxX, float maxY)
+    public GameGrid()
     {
-        gridState = GridState.NEW_BLOCKS;
+    }
+
+    public void LoadLayoutAndFill(string layoutFile)
+    {
+        gridState = GridState.EMPTY;
 
         //blockPrefab = prefab;
-        string levelContent = Resources.Load<TextAsset>(levelName).text;
+        string levelContent = Resources.Load<TextAsset>(layoutFile).text;
 
         string[] lines = levelContent.Split('\n');
         NUM_LINES = lines.Length;
@@ -70,58 +62,83 @@ public class GameGrid
         Debug.Log("X_OFFSET = " + X_OFFSET + " Y_OFFSET = " + Y_OFFSET);
 
         gridBlocks = new Block[NUM_COLUMNS, NUM_LINES];
+
+        FillGridRandomly();
     }
 
-    public int LayoutCell(int x, int y)
+    private void FillGridRandomly()
     {
-        if (x < NUM_COLUMNS && y < NUM_LINES)
-            return layout[x, y];
-        else
-            return -1;
+        gridState = GridState.NEW_BLOCKS;
+
+        for (int x = 0; x < NUM_COLUMNS; x++)
+        {
+            for (int y = 0; y < NUM_LINES; y++)
+            {
+                if (IsBlockAuthorizedInLayout(x, y))
+                {
+                    Block b = MainGame.blocksPooler.GetItem().GetComponent<Block>();
+                    gridBlocks[x, y] = b;
+                    //b.SetBlock((int)(UnityEngine.Random.value * 555) % 5);
+                    b.PutDirectlyIntoGrid(x, y);
+                }
+            }
+        }
+
+        gridState = GridState.WAIT_INPUT;
     }
 
-    const int ACTION_CLEAR = 10;
-    const int ACTION_CREATE = 20;
-    internal void ProcessTouch(Vector2 position, int action = ACTION_CLEAR)
+
+    // renvoie true si des bloc peuvent être eliminés
+    internal bool ProcessInput(Vector2 position)
     {
         if (gridState != GridState.WAIT_INPUT)
-            return;
+            return false;
 
         Vector2 worldPosition = Camera.main.ScreenToWorldPoint(position);
         int gridX = (int)(worldPosition.x - GameGrid.X_OFFSET + 0.5f);
         int gridY = (int)(worldPosition.y - GameGrid.Y_OFFSET + 0.5f);
 
-        EnterClearBlocksState(gridX, gridY);
+        if (!TryEnterClearBlocksState(gridX, gridY))
+        {
+            EnterWaitInputState();
+            return false;
+        }
+
+        return true;
     }
 
-    private void EnterClearBlocksState(int gridX, int gridY)
+    // renvoie true si des bloc peuvent être eliminés
+    private bool TryEnterClearBlocksState(int gridX, int gridY)
     {
         //Debug.Log(" ===== touch=" + position + " ===== cell=" + cellPos);
 
         Block block = TryToGetFromGrid(gridX, gridY);
-        if (!DeleteIsPossible(block, gridX, gridY))
-            return;
+        if (!SameColorAdjacent(block, gridX, gridY))
+            return false;
 
         gridState = GridState.CLEAR_BLOCKS;
-        ExecuteClearBlocks(block.colorBlock, gridX, gridY);
-        //gridState = GridState.WAIT_INPUT;
+        ExecuteClearBlocks(block.blockColor, gridX, gridY);
 
+        return true;
     }
 
-    private bool DeleteIsPossible(Block block, int x, int y)
+    private bool SameColorAdjacent(Block block, int x, int y)
     {
-        return block != null && (SameBlock(block.colorBlock, x - 1, y) || SameBlock(block.colorBlock, x + 1, y) || SameBlock(block.colorBlock, x, y + 1) || SameBlock(block.colorBlock, x, y - 1));
+        return block != null && (SameColorAt(block.blockColor, x - 1, y) ||
+            SameColorAt(block.blockColor, x + 1, y) ||
+            SameColorAt(block.blockColor, x, y + 1) ||
+            SameColorAt(block.blockColor, x, y - 1));
     }
 
-    private bool SameBlock(int color2match, int x, int y)
+    private bool SameColorAt(int color2match, int x, int y)
     {
         Block block = TryToGetFromGrid(x, y);
-        return (block != null && block.colorBlock == color2match);
+        return (block != null && block.blockColor == color2match);
     }
 
     private Block TryToGetFromGrid(int x, int y)
     {
-        if (x < 0 || y < 0 || x >= NUM_COLUMNS || y >= NUM_LINES)
+        if (!IsBlockAuthorizedInLayout(x, y))
             return null;
 
         return gridBlocks[x, y];
@@ -132,10 +149,10 @@ public class GameGrid
         Block block = TryToGetFromGrid(x, y);
 
         // si c'est la même couleur
-        if (block != null && block.colorBlock == color2match)
+        if (block != null && block.blockColor == color2match)
         {
             SetBlockInGrid(null, x, y);
-            block.Disapear();
+            block.InitDisapearing();
 
             ExecuteClearBlocks(color2match, x - 1, y);
             ExecuteClearBlocks(color2match, x + 1, y);
@@ -146,32 +163,13 @@ public class GameGrid
 
     internal void SetBlockInGrid(Block block, int x, int y)
     {
-        gridBlocks[x, y] = block;
-    }
-
-    internal void FillGridRandomly()
-    {
-        gridState = GridState.NEW_BLOCKS;
-        for (int x = 0; x < NUM_COLUMNS - 1; x++)
-        {
-            for (int y = 0; y < NUM_LINES - 1; y++)
-            {
-                if (LayoutCell(x, y) != NO_BLOCK)
-                {
-                    Block b = MainGame.blocksPooler.GetItem().GetComponent<Block>();
-                    gridBlocks[x, y] = b;
-                    //b.SetBlock((int)(UnityEngine.Random.value * 555) % 5);
-                    b.PutIntoGrid(x, y);
-                }
-            }
-        }
-
-        gridState = GridState.WAIT_INPUT;
+        if (IsBlockAuthorizedInLayout(x, y))
+            gridBlocks[x, y] = block;
     }
 
     public void DrawBackgroundMask(SpriteRenderer background)
     {
-        Texture2D texture = new Texture2D(1 + (int)(MainGame.MAX_X * 2f), 1 + (int)(MainGame.MAX_Y * 2f), TextureFormat.RGBA32, false);
+        Texture2D texture = new Texture2D(10 + (int)(MainGame.MAX_X * 2f), 10 + (int)(MainGame.MAX_Y * 2f), TextureFormat.RGBA32, false);
 
         float pixelsPerUnit = background.sprite.pixelsPerUnit;
         Sprite sprite = Sprite.Create(texture, new Rect(0, 0, MainGame.MAX_X * 2, MainGame.MAX_Y * 2), new Vector2(0.5f, 0.5f), 1);
@@ -182,7 +180,7 @@ public class GameGrid
         for (int y = 0; y < texture.height; y++)
         {
             for (int x = 0; x < texture.width; x++)
-                if (LayoutCell(x, y) > 0)
+                if (IsBlockAuthorizedInLayout(x, y))
                     texture.SetPixel(x, y, Color.white);
         }
         texture.Apply();
@@ -195,20 +193,19 @@ public class GameGrid
 
     internal void BlockDisapperingCount(int unavailableBlocks)
     {
+        // on peut gagner du temps en enchainant la création de blocs directement
+        //EnterNewBlocksState();
+
         if (unavailableBlocks > 0)
         {
-            //gridState = GridState.DELETE_BLOCKS;
-            //gridState = GridState.WAIT_INPUT; // create blocks
             gridState = GridState.CLEAR_BLOCKS;
         }
         else
         {
-            //gridState = GridState.CREATE_BLOCKS;
-            //gridState = GridState.WAIT_INPUT; // create blocks
             EnterNewBlocksState();
         }
 
-        Debug.Log("BlockDisapering = " + unavailableBlocks);
+        //Debug.Log("BlockDisapering = " + unavailableBlocks);
     }
 
     // si il y a une case vide, on entre dans l'état NEW_BLOCKS
@@ -220,7 +217,7 @@ public class GameGrid
         {
             for (int y = 0; y < NUM_LINES; y++)
             {
-                if (LayoutCell(x, y) > 0 && gridBlocks[x, y] == null)
+                if (IsBlockAuthorizedInLayout(x, y) && gridBlocks[x, y] == null)
                 {
                     columnToFill++;
                     ProcessNewBlocks(x, y);
@@ -230,52 +227,92 @@ public class GameGrid
             }
         }
 
-        //if (columnToFill == 0)
-        EnterWaitInputState();
+        if (columnToFill == 0)
+        {
+            EnterWaitInputState();
+        }
     }
 
     private void ProcessNewBlocks(int column, int firstEmptyY)
     {
-        //gridState = GridState.NEW_BLOCKS;
+        gridState = GridState.NEW_BLOCKS;
         Block block;
+        bool upperBlockFound = false;
+        bool newBlocksToCreate = false;
+
         for (int emptyY = firstEmptyY; emptyY < NUM_LINES; emptyY++)
         {
-            if (gridBlocks[column, emptyY] == null)
+            // case vide, faire descendre les blocs plus haut
+            if (IsBlockAuthorizedInLayout(column, emptyY) && gridBlocks[column, emptyY] == null)
             {
+                newBlocksToCreate = true;
+                upperBlockFound = false;
                 for (int y = emptyY + 1; y < NUM_LINES; y++)
                 {
-                    block = gridBlocks[column, y];
-                    if (block != null)
+                    if (IsBlockAuthorizedInLayout(column, y))
                     {
-                        gridBlocks[column, emptyY] = block;
-                        gridBlocks[column, y] = null;
-                        block.MoveTo(column, emptyY);
-
-                        break; // prochaine case vide !
+                        block = gridBlocks[column, y];
+                        if (block != null)
+                        {
+                            gridBlocks[column, emptyY] = block;
+                            gridBlocks[column, y] = null;
+                            block.InitFallingDown(column, emptyY);
+                            upperBlockFound = true;
+                            break; // prochaine case vide !
+                        }
                     }
+                }
+
+                // si pas de bloc existant plus haut que la case vide, création !
+                if (!upperBlockFound)
+                {
+                    gridBlocks[column, emptyY] = CreateNewMovingBlock(column, emptyY);
                 }
             }
         }
+
     }
 
-    internal void BlockMovingCount(int unavailableBlocks)
+    private Block CreateNewMovingBlock(int column, int emptyY)
     {
+        Block block = MainGame.blocksPooler.GetItem().GetComponent<Block>();
+        block.InitBlockWithtRandomColor();
+        block.FallFromOffScreen(column, emptyY);
+        return block;
+    }
+
+    internal void BlockMovingCount(int unavailableBlocks, Block block = null)
+    {
+        //Debug.Log(((block == null) ? " *" : block.name) + " BlockMovingCount ============ " + unavailableBlocks);
+
         if (unavailableBlocks > 0)
         {
             gridState = GridState.NEW_BLOCKS;
         }
         else
         {
-            //gridState = GridState.CREATE_BLOCKS;
-            //gridState = GridState.WAIT_INPUT; // create blocks
             EnterWaitInputState();
         }
-
-        Debug.Log("BlockMovingCount ============ " + unavailableBlocks);
     }
 
     private void EnterWaitInputState()
     {
+        //Debug.Log("EnterWaitInputState ################### ");
+
         gridState = GridState.WAIT_INPUT;
     }
+
+    private bool IsBlockAuthorizedInLayout(int x, int y)
+    {
+        return LayoutCell(x, y) != LAYOUT_BLOCK_FORBIDDEN && LayoutCell(x, y) != OUTSIDE_LAYOUT;
+    }
+
+    private int LayoutCell(int x, int y)
+    {
+        if (x >= 0 && y >= 0 && x < NUM_COLUMNS && y < NUM_LINES)
+            return layout[x, y];
+        else
+            return OUTSIDE_LAYOUT;
+    }
+
 }

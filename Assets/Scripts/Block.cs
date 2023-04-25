@@ -1,25 +1,30 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using UnityEngine;
 
 [RequireComponent(typeof(SpriteRenderer))]
 public class Block : MonoBehaviour
 {
     // data =====================================
-    private const int MAX_BLOCKS = 5;
+    private static GameGrid grid;
+    private static Pooler pooler;
 
-    public int colorBlock;
+    private const int MAX_BLOCKS = 5;
+    public int blockColor { get; private set; }
+
+    public static int numBlocksDisapearing = 0;
+    public static int numBlocksMoving = 0;
 
     // graphics =================================
     [SerializeField]
     private Sprite[] blockSprites;
-    private SpriteRenderer spriteRenderer;
-    public bool disappearingAnimation;
-    public static int numBlocksDisapearing = 0;
-    public static int numBlocksMoving = 0;
 
-    private static GameGrid grid;
-    private static Pooler pooler;
+    private SpriteRenderer spriteRenderer;
+
+    // animation --------------------------------
+    private Vector2 targetPos;
+    private static WaitForSeconds interframe = new WaitForSeconds(0.02f);
+    private const float DISAPEARING_ANIM_STEPS = 15; // étapes d'animation pour la disparition
+    private const float FALLING_ANIM_STEPS = 20; // étapes d'animation pour le mouvement
 
     private void Awake()
     {
@@ -35,37 +40,35 @@ public class Block : MonoBehaviour
 
     internal void InitBlock(int color)
     {
-        colorBlock = color;
-        spriteRenderer.sprite = blockSprites[colorBlock];
+        blockColor = color;
+        spriteRenderer.sprite = blockSprites[blockColor];
         spriteRenderer.color = Color.white;
         spriteRenderer.transform.localScale = Vector3.one;
     }
 
-    internal void PutIntoGrid(int x, int y)
+    internal void PutDirectlyIntoGrid(int x, int y)
     {
         transform.position = new Vector2(x + GameGrid.X_OFFSET, y + GameGrid.Y_OFFSET);
         grid.SetBlockInGrid(this, x, y);
     }
 
-    public void SetRandomColor()
+    public void InitBlockWithtRandomColor()
     {
         InitBlock(UnityEngine.Random.Range(0, MAX_BLOCKS));
     }
 
-    public void Disapear()
+    public void InitDisapearing()
     {
         grid.BlockDisapperingCount(++numBlocksDisapearing); // à remplacer par un event/delegate ...
-        StartCoroutine(FadeToClear());
+        StartCoroutine(AnimateDisapearing());
     }
 
-    static WaitForSeconds interframe = new WaitForSeconds(0.015f);
-    const float ANIM_STEPS = 20f;
-    private IEnumerator FadeToClear()
+    private IEnumerator AnimateDisapearing()
     {
         spriteRenderer.transform.localScale = Vector3.one * 1.2f;
-        for (int iStep = 0; iStep < ANIM_STEPS; iStep++)
+        for (int iStep = 0; iStep < DISAPEARING_ANIM_STEPS; iStep++)
         {
-            float percent = iStep / ANIM_STEPS;
+            float percent = iStep / DISAPEARING_ANIM_STEPS;
             spriteRenderer.color = Color.Lerp(spriteRenderer.color, Color.clear, percent);
             spriteRenderer.transform.localScale = Vector3.Lerp(spriteRenderer.transform.localScale, Vector3.zero, percent);
 
@@ -77,29 +80,32 @@ public class Block : MonoBehaviour
         pooler.SaveItem(this.gameObject);
     }
 
-    Vector2 targetPos;
-    internal void MoveTo(int gridX, int gridY)
+    internal void FallFromOffScreen(int column, int emptyY)
     {
-        targetPos = new Vector2(gridX + GameGrid.X_OFFSET, gridY + GameGrid.Y_OFFSET);
-        // new Vector2(gridX, gridY);
-
-        grid.BlockMovingCount(++numBlocksMoving); // à remplacer par un event/delegate ...
-        StartCoroutine(MoveToTarget());
+        transform.position = new Vector2(column + GameGrid.X_OFFSET, 2f * MainGame.MAX_Y + GameGrid.Y_OFFSET);
+        InitFallingDown(column, emptyY);
     }
 
-    private IEnumerator MoveToTarget()
+
+    internal void InitFallingDown(int gridX, int gridY)
     {
-        for (int iStep = 0; iStep < ANIM_STEPS; iStep++)
+        targetPos = new Vector2(gridX + GameGrid.X_OFFSET, gridY + GameGrid.Y_OFFSET);
+
+        grid.BlockMovingCount(++numBlocksMoving, this); // à remplacer par un event/delegate ...
+        StartCoroutine(AnimateFalling());
+    }
+
+    private IEnumerator AnimateFalling()
+    {
+        for (int iStep = 0; iStep < FALLING_ANIM_STEPS; iStep++)
         {
-            float percent = iStep / ANIM_STEPS;
+            float percent = iStep / FALLING_ANIM_STEPS;
             transform.position = Vector2.Lerp(transform.position, targetPos, percent);
 
             yield return interframe;
         }
 
-        yield return interframe;
-
-        Debug.Log("MoveToTarget ................. " + this.name + " >>> " + targetPos);
-        grid.BlockMovingCount(--numBlocksMoving); // à remplacer par un event/delegate ...
+        //Debug.Log("MoveToTarget ................. " + this.name + " >>> " + targetPos);
+        grid.BlockMovingCount(--numBlocksMoving, this); // à remplacer par un event/delegate ...
     }
 }

@@ -1,12 +1,16 @@
+using System.Collections;
 using UnityEngine;
+using static GameGrid;
 
 public class MainGame : MonoBehaviour
 {
+    [SerializeField]
+    private string LayoutName = "level00";
 
     [SerializeField]
     private GameObject blockPrefab;
 
-    static public float MAX_X = 0; // en positif
+    static public float MAX_X = 0; // à calculer
     static public float MAX_Y = 0; // à calculer
 
     [SerializeField]
@@ -15,53 +19,74 @@ public class MainGame : MonoBehaviour
     public static GameGrid gameGrid;
     public static Pooler blocksPooler;
 
+    [SerializeField]
+    private GridState gridstate;  // pour debug
+
+    private bool canProcessInput = false;
+
     // Start is called before the first frame update
     void Start()
     {
         blocksPooler = new Pooler(blockPrefab);
 
-        // on adapte la taille de la caméra à la résolution
-        AdaptCamera();
+        // on adapte le viewport de la caméra à la taille de la grille
+        // (peut être mieux si fait après le chargement du layout ...)
+        AdaptViewportToGrid();
 
-        // donne à la grille la taille du viewport, le prefab
-        gameGrid = new GameGrid(blockPrefab, MAX_X, MAX_Y);
-        gameGrid.FillGridRandomly();
+        // en 2 temps, pour que la variable static soit dispo pour les blocs
+        gameGrid = new GameGrid();
+        gameGrid.LoadLayoutAndFill(LayoutName);
 
-        // utilise les offsets de la grille pour dessiner le fond
+        // dessine le masque du fond selon le layout
         if (background != null)
             gameGrid.DrawBackgroundMask(background);
+
+        canProcessInput = true;
     }
 
-    private void AdaptCamera()
+    private void AdaptViewportToGrid()
     {
         float ratio = (float)Screen.height / Screen.width;
-        MAX_X = (GameGrid.MAX_COLUMNS + 1) * 0.5f; // +1 pour avoir un peu de marge autour de la grille
+        MAX_X = (MAX_COLUMNS + 1) * 0.5f; // +1 pour avoir un peu de marge autour de la grille
         MAX_Y = MAX_X * ratio;
 
         Camera.main.orthographicSize = MAX_Y;
 
-        Debug.Log("Screen w*h : " + Screen.width + " / " + Screen.height + " UNITS =" + MAX_X + " / " + MAX_Y);
+        Debug.Log("Screen w*h = " + Screen.width + "*" + Screen.height + " / CamSize = " + MAX_X + "*" + MAX_Y);
     }
 
     // Update is called once per frame
     void Update()
     {
+        bool gridIsBusy = false;
 
 #if PLATFORM_ANDROID
         if (Input.touchCount > 0)
         {
             Touch t = Input.GetTouch(0);
-            if (t.phase == TouchPhase.Began)
-                gameGrid.ProcessTouch(t.position);
+            if (t.phase == TouchPhase.Began && canProcessInput)
+                gridIsBusy = gameGrid.ProcessInput(t.position);
         }
 #endif
 
 #if UNITY_EDITOR_WIN
-        if (Input.GetMouseButtonDown(0))
+        if (Input.GetMouseButtonDown(0) && canProcessInput)
         {
-            gameGrid.ProcessTouch(Input.mousePosition);
+            gridIsBusy = gameGrid.ProcessInput(Input.mousePosition);
         }
 #endif
 
+        if (gridIsBusy)
+        {
+            canProcessInput = false;
+            StartCoroutine(WaitALittleBeforeNextInput());
+        }
+    }
+
+    private WaitForSeconds wait = new WaitForSeconds(0.1f);
+    private IEnumerator WaitALittleBeforeNextInput()
+    {
+        yield return wait;
+        canProcessInput = true;
     }
 }
