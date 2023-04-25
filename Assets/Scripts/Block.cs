@@ -22,9 +22,9 @@ public class Block : MonoBehaviour
 
     // animation --------------------------------
     private Vector2 targetPos;
-    private static WaitForSeconds interframe = new WaitForSeconds(0.02f);
-    private const float DISAPEARING_ANIM_STEPS = 15; // étapes d'animation pour la disparition
-    private const float FALLING_ANIM_STEPS = 20; // étapes d'animation pour le mouvement
+    private static WaitForSeconds interframe = new WaitForSeconds(1f / 80);
+    private const float DISAPEARING_ANIM_STEPS = 25; // étapes d'animation pour la disparition
+    const int DAVID_GOOD_ENOUGH_STEP0 = 1 + (int)(DISAPEARING_ANIM_STEPS * 0.2f); // ça va, c'est bon comme ça !
 
     private void Awake()
     {
@@ -32,7 +32,10 @@ public class Block : MonoBehaviour
         InitBlock(UnityEngine.Random.Range(0, MAX_BLOCKS));
 
         if (grid == null)
+        {
+            Debug.Log("DAVID_GOOD_ENOUGH_STEP0=" + DAVID_GOOD_ENOUGH_STEP0);
             grid = MainGame.gameGrid;
+        }
 
         if (pooler == null)
             pooler = MainGame.blocksPooler;
@@ -68,28 +71,32 @@ public class Block : MonoBehaviour
         spriteRenderer.transform.localScale = Vector3.one * 1.2f;
         for (int iStep = 0; iStep < DISAPEARING_ANIM_STEPS; iStep++)
         {
+            if (iStep == DAVID_GOOD_ENOUGH_STEP0)
+                grid.BlockDisapperingCount(--numBlocksDisapearing); // à remplacer par un event/delegate ...
+
             float percent = iStep / DISAPEARING_ANIM_STEPS;
             spriteRenderer.color = Color.Lerp(spriteRenderer.color, Color.clear, percent);
-            spriteRenderer.transform.localScale = Vector3.Lerp(spriteRenderer.transform.localScale, Vector3.zero, percent);
+            spriteRenderer.transform.localScale = Vector3.Lerp(spriteRenderer.transform.localScale, Vector3.one * 2f, percent);
 
             yield return interframe;
         }
 
         //Debug.Log("FadeToClear ................. " + this.name);
-        grid.BlockDisapperingCount(--numBlocksDisapearing); // à remplacer par un event/delegate ...
+
         pooler.SaveItem(this.gameObject);
     }
 
-    internal void FallFromOffScreen(int column, int emptyY)
+    internal void NewBlockFromOffScreen(int column, int emptyY)
     {
-        transform.position = new Vector2(column + GameGrid.X_OFFSET, 2f * MainGame.MAX_Y + GameGrid.Y_OFFSET);
+        transform.position = new Vector2(column + GameGrid.X_OFFSET, emptyY + MainGame.MAX_Y * 0.5f /*+ GameGrid.Y_OFFSET*/);
         InitFallingDown(column, emptyY);
     }
 
-
+    float FALLING_ANIM_STEPS = 0;
     internal void InitFallingDown(int gridX, int gridY)
     {
         targetPos = new Vector2(gridX + GameGrid.X_OFFSET, gridY + GameGrid.Y_OFFSET);
+        FALLING_ANIM_STEPS = (transform.position.y - targetPos.y) / 0.4f; // étapes d'animation pour la chute
 
         grid.BlockMovingCount(++numBlocksMoving, this); // à remplacer par un event/delegate ...
         StartCoroutine(AnimateFalling());
@@ -99,6 +106,9 @@ public class Block : MonoBehaviour
     {
         for (int iStep = 0; iStep < FALLING_ANIM_STEPS; iStep++)
         {
+            if (transform.position.y - targetPos.y < 0.04f) // good enough
+                break;
+
             float percent = iStep / FALLING_ANIM_STEPS;
             transform.position = Vector2.Lerp(transform.position, targetPos, percent);
 
@@ -106,6 +116,8 @@ public class Block : MonoBehaviour
         }
 
         //Debug.Log("MoveToTarget ................. " + this.name + " >>> " + targetPos);
+
+        transform.position = targetPos; // parfois le bloc ne termine pas sa course si STEPS est petit ...
         grid.BlockMovingCount(--numBlocksMoving, this); // à remplacer par un event/delegate ...
     }
 }

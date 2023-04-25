@@ -84,6 +84,7 @@ public class MainGame : MonoBehaviour
     }
 
     private WaitForSeconds wait = new WaitForSeconds(0.1f);
+    // pour éviter que le joueur spamme les touchs ...
     private IEnumerator WaitALittleBeforeNextInput()
     {
         yield return wait;

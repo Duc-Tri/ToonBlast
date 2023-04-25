@@ -103,6 +103,7 @@ public class GameGrid
             EnterWaitInputState();
             return false;
         }
+        //else EnterNewBlocksState(); ////////////////////////////////////////////////////////////
 
         return true;
     }
@@ -211,6 +212,8 @@ public class GameGrid
     // si il y a une case vide, on entre dans l'état NEW_BLOCKS
     private void EnterNewBlocksState()
     {
+        //Debug.Log("EnterNewBlocksState +++++++++++++++++++++");
+
         int columnToFill = 0;
 
         for (int x = 0; x < NUM_COLUMNS; x++)
@@ -228,9 +231,7 @@ public class GameGrid
         }
 
         if (columnToFill == 0)
-        {
             EnterWaitInputState();
-        }
     }
 
     private void ProcessNewBlocks(int column, int firstEmptyY)
@@ -266,18 +267,17 @@ public class GameGrid
                 // si pas de bloc existant plus haut que la case vide, création !
                 if (!upperBlockFound)
                 {
-                    gridBlocks[column, emptyY] = CreateNewMovingBlock(column, emptyY);
+                    gridBlocks[column, emptyY] = CreateNewBlockFalling(column, emptyY);
                 }
             }
         }
-
     }
 
-    private Block CreateNewMovingBlock(int column, int emptyY)
+    private Block CreateNewBlockFalling(int column, int emptyY)
     {
         Block block = MainGame.blocksPooler.GetItem().GetComponent<Block>();
         block.InitBlockWithtRandomColor();
-        block.FallFromOffScreen(column, emptyY);
+        block.NewBlockFromOffScreen(column, emptyY);
         return block;
     }
 
