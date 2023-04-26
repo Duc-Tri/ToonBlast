@@ -1,9 +1,13 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.UI;
 using static GameGrid;
 
 public class MainGame : MonoBehaviour
 {
+    [SerializeField]
+    private Image inputIndicator;
+
     [SerializeField]
     private string LayoutName = "level00";
 
@@ -27,6 +31,10 @@ public class MainGame : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
+#if PLATFORM_ANDROID
+        Application.targetFrameRate = 300;
+#endif
+
         blocksPooler = new Pooler(blockPrefab);
 
         // on adapte le viewport de la caméra à la taille de la grille
@@ -35,7 +43,8 @@ public class MainGame : MonoBehaviour
 
         // en 2 temps, pour que la variable static soit dispo pour les blocs
         gameGrid = new GameGrid();
-        gameGrid.LoadLayoutAndFill(LayoutName);
+        Layout layout = new Layout(LayoutName);
+        gameGrid.LoadLayoutAndFill(layout);
 
         // dessine le masque du fond selon le layout
         if (background != null)
@@ -81,9 +90,12 @@ public class MainGame : MonoBehaviour
             canProcessInput = false;
             StartCoroutine(WaitALittleBeforeNextInput());
         }
+
+        if (inputIndicator != null)
+            inputIndicator.color = canProcessInput ? Color.green : Color.red;
     }
 
-    private WaitForSeconds wait = new WaitForSeconds(0.1f);
+    private WaitForEndOfFrame wait = new WaitForEndOfFrame();
     // pour éviter que le joueur spamme les touchs ...
     private IEnumerator WaitALittleBeforeNextInput()
     {

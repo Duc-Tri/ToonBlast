@@ -14,16 +14,9 @@ public class GameGrid
     }
     public GridState gridState;
 
-    private int[,] layout; // lu à partir du CSV
-    private const int LAYOUT_BLOCK_FORBIDDEN = 0; // valeur dans le CSV
-    private const int LAYOUT_BLOCK_ENABLE = 1; // valeur dans le CSV
-    private const int OUTSIDE_LAYOUT = -1; // valeur dans le CSV
 
     private Block[,] gridBlocks;
-
-    public int NUM_COLUMNS { get; private set; }
-
-    public int NUM_LINES { get; private set; }
+    private Layout layout;
 
     public static float X_OFFSET { get; private set; }
     public static float Y_OFFSET { get; private set; }
@@ -32,36 +25,18 @@ public class GameGrid
     {
     }
 
-    public void LoadLayoutAndFill(string layoutFile)
+    public void LoadLayoutAndFill(Layout layout)
     {
         gridState = GridState.EMPTY;
-
+        this.layout = layout;
         //blockPrefab = prefab;
-        string levelContent = Resources.Load<TextAsset>(layoutFile).text;
 
-        string[] lines = levelContent.Split('\n');
-        NUM_LINES = lines.Length;
-
-        for (int y = 0; y < NUM_LINES; y++)
-        {
-            string[] cells = lines[y].Split(';');
-            NUM_COLUMNS = cells.Length;
-
-            if (layout == null)
-                layout = new int[NUM_COLUMNS, NUM_LINES];
-
-            for (int x = 0; x < NUM_COLUMNS; x++)
-                layout[x, y] = int.Parse(cells[x]);
-        }
-
-        Debug.Log(levelContent);
-
-        X_OFFSET = 0.5f - NUM_COLUMNS * 0.5f;
-        Y_OFFSET = 0.5f - NUM_LINES * 0.5f;
+        X_OFFSET = 0.5f - layout.NUM_COLUMNS * 0.5f;
+        Y_OFFSET = 0.5f - layout.NUM_LINES * 0.5f;
 
         Debug.Log("X_OFFSET = " + X_OFFSET + " Y_OFFSET = " + Y_OFFSET);
 
-        gridBlocks = new Block[NUM_COLUMNS, NUM_LINES];
+        gridBlocks = new Block[layout.NUM_COLUMNS, layout.NUM_LINES];
 
         FillGridRandomly();
     }
@@ -70,16 +45,16 @@ public class GameGrid
     {
         gridState = GridState.NEW_BLOCKS;
 
-        for (int x = 0; x < NUM_COLUMNS; x++)
+        for (int x = 0; x < layout.NUM_COLUMNS; x++)
         {
-            for (int y = 0; y < NUM_LINES; y++)
+            for (int y = 0; y < layout.NUM_LINES; y++)
             {
-                if (IsBlockAuthorizedInLayout(x, y))
+                if (layout.IsBlockRAndom(x, y))
                 {
                     Block b = MainGame.blocksPooler.GetItem().GetComponent<Block>();
                     gridBlocks[x, y] = b;
                     //b.SetBlock((int)(UnityEngine.Random.value * 555) % 5);
-                    b.PutDirectlyIntoGrid(x, y);
+                    b.PutDirectlyInto(x, y);
                 }
             }
         }
@@ -139,7 +114,7 @@ public class GameGrid
 
     private Block TryToGetFromGrid(int x, int y)
     {
-        if (!IsBlockAuthorizedInLayout(x, y))
+        if (!layout.IsBlockAuthorized(x, y))
             return null;
 
         return gridBlocks[x, y];
@@ -164,7 +139,7 @@ public class GameGrid
 
     internal void SetBlockInGrid(Block block, int x, int y)
     {
-        if (IsBlockAuthorizedInLayout(x, y))
+        if (layout.IsBlockAuthorized(x, y))
             gridBlocks[x, y] = block;
     }
 
@@ -181,7 +156,7 @@ public class GameGrid
         for (int y = 0; y < texture.height; y++)
         {
             for (int x = 0; x < texture.width; x++)
-                if (IsBlockAuthorizedInLayout(x, y))
+                if (layout.IsBlockAuthorized(x, y))
                     texture.SetPixel(x, y, Color.white);
         }
         texture.Apply();
@@ -189,7 +164,8 @@ public class GameGrid
         SpriteMask mask = background.gameObject.AddComponent<SpriteMask>();
         mask.alphaCutoff = 0.906f;
         mask.sprite = sprite;
-        background.transform.position = new Vector2((2f * MainGame.MAX_X - NUM_COLUMNS) / 2f, (2f * MainGame.MAX_Y - NUM_LINES) / 2f);
+        background.transform.position = new Vector2((2f * MainGame.MAX_X - layout.NUM_COLUMNS) / 2f,
+            (2f * MainGame.MAX_Y - layout.NUM_LINES) / 2f);
     }
 
     internal void BlockDisapperingCount(int unavailableBlocks)
@@ -216,11 +192,11 @@ public class GameGrid
 
         int columnToFill = 0;
 
-        for (int x = 0; x < NUM_COLUMNS; x++)
+        for (int x = 0; x < layout.NUM_COLUMNS; x++)
         {
-            for (int y = 0; y < NUM_LINES; y++)
+            for (int y = 0; y < layout.NUM_LINES; y++)
             {
-                if (IsBlockAuthorizedInLayout(x, y) && gridBlocks[x, y] == null)
+                if (layout.IsBlockAuthorized(x, y) && gridBlocks[x, y] == null)
                 {
                     columnToFill++;
                     ProcessNewBlocks(x, y);
@@ -241,16 +217,16 @@ public class GameGrid
         bool upperBlockFound = false;
         bool newBlocksToCreate = false;
 
-        for (int emptyY = firstEmptyY; emptyY < NUM_LINES; emptyY++)
+        for (int emptyY = firstEmptyY; emptyY < layout.NUM_LINES; emptyY++)
         {
             // case vide, faire descendre les blocs plus haut
-            if (IsBlockAuthorizedInLayout(column, emptyY) && gridBlocks[column, emptyY] == null)
+            if (layout.IsBlockAuthorized(column, emptyY) && gridBlocks[column, emptyY] == null)
             {
                 newBlocksToCreate = true;
                 upperBlockFound = false;
-                for (int y = emptyY + 1; y < NUM_LINES; y++)
+                for (int y = emptyY + 1; y < layout.NUM_LINES; y++)
                 {
-                    if (IsBlockAuthorizedInLayout(column, y))
+                    if (layout.IsBlockAuthorized(column, y))
                     {
                         block = gridBlocks[column, y];
                         if (block != null)
@@ -300,19 +276,6 @@ public class GameGrid
         //Debug.Log("EnterWaitInputState ################### ");
 
         gridState = GridState.WAIT_INPUT;
-    }
-
-    private bool IsBlockAuthorizedInLayout(int x, int y)
-    {
-        return LayoutCell(x, y) != LAYOUT_BLOCK_FORBIDDEN && LayoutCell(x, y) != OUTSIDE_LAYOUT;
-    }
-
-    private int LayoutCell(int x, int y)
-    {
-        if (x >= 0 && y >= 0 && x < NUM_COLUMNS && y < NUM_LINES)
-            return layout[x, y];
-        else
-            return OUTSIDE_LAYOUT;
     }
 
 }
